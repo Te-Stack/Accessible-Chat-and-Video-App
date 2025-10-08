@@ -1,22 +1,13 @@
-// VideoContainer.tsx with Stream's native transcription - FIXED
-import React, { useRef, useState, useEffect } from 'react';
-import { 
-  StreamCall, 
-  ParticipantView, 
-  VideoPreview 
-} from '@stream-io/video-react-sdk';
+// components/AccessibleVideo/VideoContainer.tsx - Refactored version
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { StreamCall, VideoPreview } from '@stream-io/video-react-sdk';
 import type { Call, StreamVideoParticipant } from '@stream-io/video-react-sdk';
-import AccessibleVideoControls from './VideoControls';
+import {AccessibleVideoControls} from './VideoControls';
+import { TranscriptDisplay, type TranscriptData } from './TranscriptDisplay';
+import { ParticipantGrid } from './ParticipantGrid';
+import { useScreenReader } from '../../utils';
+import { MAX_TRANSCRIPTS } from '../../utils/constants';
 import './VideoContainer.css';
-
-interface TranscriptData {
-  sessionId: string;
-  text: string;
-  userId?: string;
-  timestamp: number;
-  isFinal: boolean;
-  speaker?: string;
-}
 
 interface AccessibleVideoContainerProps {
   call: Call | null;
@@ -24,7 +15,19 @@ interface AccessibleVideoContainerProps {
   showPreview?: boolean;
 }
 
-const AccessibleVideoContainer: React.FC<AccessibleVideoContainerProps> = ({ 
+interface ClosedCaptionEvent {
+  closed_caption?: {
+    text?: string;
+    speaker_id?: string;
+    user?: { id?: string; name?: string; };
+  };
+  text?: string;
+  user_id?: string;
+}
+
+type TranscriptionStatus = 'idle' | 'starting' | 'active' | 'error';
+
+export const AccessibleVideoContainer: React.FC<AccessibleVideoContainerProps> = ({ 
   call,
   onLeaveMeeting = async () => {},
   showPreview = true
@@ -34,141 +37,117 @@ const AccessibleVideoContainer: React.FC<AccessibleVideoContainerProps> = ({
   const [captionsEnabled, setCaptionsEnabled] = useState<boolean>(false);
   const [transcripts, setTranscripts] = useState<TranscriptData[]>([]);
   const [transcriptionSupported, setTranscriptionSupported] = useState<boolean>(true);
-  const [transcriptionStatus, setTranscriptionStatus] = useState<'idle' | 'starting' | 'active' | 'error'>('idle');
+  const [transcriptionStatus, setTranscriptionStatus] = useState<TranscriptionStatus>('idle');
   
   const containerRef = useRef<HTMLDivElement>(null);
-  const captionsRef = useRef<HTMLDivElement>(null);
+  const { announce } = useScreenReader();
+
+  // Update participants list
+  const updateParticipants = useCallback(() => {
+    if (!call) return;
+    
+    const allParticipants = [
+      ...(call.state.localParticipant ? [call.state.localParticipant] : []),
+      ...Array.from(call.state.remoteParticipants.values())
+    ];
+    setParticipants(allParticipants);
+  }, [call]);
 
   // Track participants
   useEffect(() => {
     if (!call) return;
 
-    const updateParticipants = () => {
-      const allParticipants = [
-        ...(call.state.localParticipant ? [call.state.localParticipant] : []),
-        ...Array.from(call.state.remoteParticipants.values())
-      ];
-      setParticipants(allParticipants);
-    };
-
     updateParticipants();
 
-    const unsubscribeFunctions = [
+    const unsubscribe = [
       call.on('participantJoined', updateParticipants),
       call.on('participantLeft', updateParticipants),
       call.on('participantUpdated', updateParticipants)
     ];
 
     return () => {
-      unsubscribeFunctions.forEach(unsub => {
+      unsubscribe.forEach(unsub => {
         if (typeof unsub === 'function') unsub();
       });
     };
-  }, [call]);
+  }, [call, updateParticipants]);
 
-  // Stream native transcription event handling
+  // Handle closed captions events
+  const handleClosedCaptionsStarted = useCallback(() => {
+    setCaptionsEnabled(true);
+    setTranscriptionStatus('active');
+    setTranscripts([]);
+    announce('Live captions started', 'polite');
+  }, [announce]);
+
+  const handleClosedCaptionsStopped = useCallback(() => {
+    setCaptionsEnabled(false);
+    setTranscriptionStatus('idle');
+    announce('Live captions stopped', 'polite');
+  }, [announce]);
+
+  const handleClosedCaption = useCallback((event: ClosedCaptionEvent) => {
+    const closedCaption = event.closed_caption || {};
+    const captionText = closedCaption.text || event.text || '';
+    const speakerId = closedCaption.speaker_id || closedCaption.user?.id || event.user_id || '';
+    
+    if (!captionText.trim()) return;
+
+    const participant = participants.find(p => 
+      p.userId === speakerId || 
+      p.sessionId === speakerId ||
+      p.name === closedCaption.user?.name
+    );
+    
+    const speakerName = participant?.name || 
+                       closedCaption.user?.name || 
+                       participant?.userId || 
+                       speakerId || 
+                       'Participant';
+    
+    const newTranscript: TranscriptData = {
+      sessionId: speakerId || `session-${Date.now()}`,
+      text: captionText.trim(),
+      userId: speakerId,
+      timestamp: Date.now(),
+      isFinal: true,
+      speaker: speakerName
+    };
+
+    setTranscripts(prev => {
+      const updated = prev.filter(t => t.isFinal || t.userId !== newTranscript.userId);
+      return [...updated, newTranscript].slice(-MAX_TRANSCRIPTS);
+    });
+
+    announce(`${speakerName}: ${captionText}`, 'polite');
+  }, [participants, announce]);
+
+  const handleTranscriptionFailed = useCallback(() => {
+    setTranscriptionStatus('error');
+    setTranscriptionSupported(false);
+    announce('Live captions failed - feature may not be available', 'assertive');
+  }, [announce]);
+
+  // Subscribe to Stream events
   useEffect(() => {
     if (!call) return;
 
-    const handleClosedCaptionsStarted = (event: any) => {
-      console.log('Stream closed captions started:', event);
-      setCaptionsEnabled(true);
-      setTranscriptionStatus('active');
-      setTranscripts([]);
-      announceToScreenReader('Live captions started');
-    };
-
-    const handleClosedCaptionsStopped = (event: any) => {
-      console.log('Stream closed captions stopped:', event);
-      setCaptionsEnabled(false);
-      setTranscriptionStatus('idle');
-      announceToScreenReader('Live captions stopped');
-    };
-
-    // This is the key event for receiving actual caption text
-    const handleClosedCaption = (event: any) => {
-      console.log('Stream closed caption received:', event);
-      
-      // Extract caption data from Stream's event structure
-      // Based on console logs, the data is in event.closed_caption
-      const closedCaption = event.closed_caption || {};
-      const captionText = closedCaption.text || event.text || '';
-      const speakerId = closedCaption.speaker_id || closedCaption.user?.id || event.user_id || '';
-      const isFinal = true; // Stream captions are typically final
-      
-      if (captionText && captionText.trim()) {
-        // Find the participant who spoke
-        const participant = participants.find(p => p.userId === speakerId) || 
-                          participants.find(p => p.sessionId === speakerId) ||
-                          participants.find(p => p.name === closedCaption.user?.name);
-        
-        const speakerName = participant?.name || 
-                          closedCaption.user?.name || 
-                          participant?.userId || 
-                          speakerId || 
-                          'Participant';
-        
-        const newTranscript: TranscriptData = {
-          sessionId: speakerId || `session-${Date.now()}`,
-          text: captionText.trim(),
-          userId: speakerId,
-          timestamp: Date.now(),
-          isFinal,
-          speaker: speakerName
-        };
-
-        console.log('Adding transcript:', newTranscript); // Debug log
-
-        setTranscripts(prev => {
-          let updated = [...prev];
-          
-          // If this is an interim result, replace any existing interim with same speaker
-          if (!isFinal) {
-            updated = updated.filter(t => t.isFinal || t.userId !== newTranscript.userId);
-          }
-          
-          updated.push(newTranscript);
-          
-          // Keep last 10 transcripts for performance
-          return updated.slice(-10);
-        });
-
-        // Announce final transcripts to screen readers
-        if (isFinal) {
-          announceToScreenReader(`Caption from ${speakerName}: ${captionText}`);
-        }
-      } else {
-        console.log('No caption text found in event:', event);
-      }
-    };
-
-    const handleTranscriptionFailed = (event: any) => {
-      console.error('Stream transcription/captions failed:', event);
-      setTranscriptionStatus('error');
-      setTranscriptionSupported(false);
-      announceToScreenReader('Live captions failed - feature may not be available');
-    };
-
-    // Subscribe to the correct Stream events based on documentation
     const eventHandlers = [
       { event: 'call.closed_captions_started', handler: handleClosedCaptionsStarted },
       { event: 'call.closed_captions_stopped', handler: handleClosedCaptionsStopped },
-      { event: 'call.closed_caption', handler: handleClosedCaption }, // This is the key event
+      { event: 'call.closed_caption', handler: handleClosedCaption },
       { event: 'call.closed_captions_failed', handler: handleTranscriptionFailed },
       { event: 'call.transcription_failed', handler: handleTranscriptionFailed }
     ];
 
-    // Subscribe to events
     eventHandlers.forEach(({ event, handler }) => {
       try {
         call.on(event, handler);
-        console.log(`Subscribed to ${event}`);
       } catch (error) {
         console.warn(`Could not subscribe to ${event}:`, error);
       }
     });
 
-    // Check current state
     if (call.state.transcribing) {
       setCaptionsEnabled(true);
       setTranscriptionStatus('active');
@@ -183,16 +162,9 @@ const AccessibleVideoContainer: React.FC<AccessibleVideoContainerProps> = ({
         }
       });
     };
-  }, [call, participants]);
+  }, [call, handleClosedCaptionsStarted, handleClosedCaptionsStopped, handleClosedCaption, handleTranscriptionFailed]);
 
-  // Auto-scroll captions
-  useEffect(() => {
-    if (captionsRef.current && transcripts.length > 0) {
-      captionsRef.current.scrollTop = captionsRef.current.scrollHeight;
-    }
-  }, [transcripts]);
-
-  // Handle fullscreen changes
+  // Fullscreen handling
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
@@ -202,7 +174,7 @@ const AccessibleVideoContainer: React.FC<AccessibleVideoContainerProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  const toggleFullscreen = async () => {
+  const toggleFullscreen = useCallback(async () => {
     if (!containerRef.current) return;
     
     try {
@@ -214,16 +186,16 @@ const AccessibleVideoContainer: React.FC<AccessibleVideoContainerProps> = ({
     } catch (error) {
       console.warn('Fullscreen toggle failed:', error);
     }
-  };
+  }, [isFullscreen]);
 
-  const toggleCaptions = async () => {
+  const toggleCaptions = useCallback(async () => {
     if (!transcriptionSupported) {
-      announceToScreenReader('Live captions not supported');
+      announce('Live captions not supported', 'assertive');
       return;
     }
 
     if (!call) {
-      announceToScreenReader('No active call for captions');
+      announce('No active call for captions', 'assertive');
       return;
     }
 
@@ -231,67 +203,24 @@ const AccessibleVideoContainer: React.FC<AccessibleVideoContainerProps> = ({
       setTranscriptionStatus('starting');
 
       if (captionsEnabled) {
-        // Use Stream's direct API to stop closed captions
         await call.stopClosedCaptions();
-        announceToScreenReader('Stopping live captions...');
+        announce('Stopping live captions...', 'polite');
       } else {
-        // Use Stream's direct API to start closed captions with English language
         await call.startClosedCaptions({ language: 'en' });
-        announceToScreenReader('Starting live captions...');
+        announce('Starting live captions...', 'polite');
       }
     } catch (error) {
-      console.error('Closed captions toggle error:', error);
+      console.error('Captions toggle error:', error);
       setTranscriptionStatus('error');
       
       const errorMessage = error instanceof Error ? error.message : 'Failed to toggle captions';
-      announceToScreenReader(errorMessage);
+      announce(errorMessage, 'assertive');
       
-      // Reset status after error
       setTimeout(() => {
         setTranscriptionStatus(captionsEnabled ? 'active' : 'idle');
       }, 3000);
     }
-  };
-
-  const getStatusMessage = () => {
-    switch (transcriptionStatus) {
-      case 'starting':
-        return 'Starting live captions...';
-      case 'active':
-        return 'Listening for speech... Powered by Stream Video closed captions.';
-      case 'error':
-        return 'Caption error. Try toggling captions off and on again.';
-      default:
-        return 'Click the captions button to enable live closed captions.';
-    }
-  };
-
-  const announceToScreenReader = (message: string): void => {
-    const announcement = document.createElement('div');
-    announcement.setAttribute('aria-live', 'assertive');
-    announcement.setAttribute('aria-atomic', 'true');
-    announcement.className = 'sr-only';
-    announcement.textContent = message;
-    announcement.style.cssText = `
-      position: absolute !important;
-      width: 1px !important;
-      height: 1px !important;
-      padding: 0 !important;
-      margin: -1px !important;
-      overflow: hidden !important;
-      clip: rect(0, 0, 0, 0) !important;
-      white-space: nowrap !important;
-      border: 0 !important;
-    `;
-    
-    document.body.appendChild(announcement);
-    
-    setTimeout(() => {
-      if (document.body.contains(announcement)) {
-        document.body.removeChild(announcement);
-      }
-    }, 1000);
-  };
+  }, [call, captionsEnabled, transcriptionSupported, announce]);
 
   // Render preview if no call
   if (!call && showPreview) {
@@ -323,84 +252,13 @@ const AccessibleVideoContainer: React.FC<AccessibleVideoContainerProps> = ({
     >
       <StreamCall call={call}>
         <div className="video-grid">
-          <div 
-            className="participants-container"
-            aria-label={`Video call with ${participants.length} participant${participants.length !== 1 ? 's' : ''}`}
-          >
-            {participants.length > 0 ? (
-              participants.map((participant) => (
-                <div
-                  key={participant.sessionId}
-                  className={`participant-video ${
-                    participant.isLocalParticipant ? 'local' : 'remote'
-                  }`}
-                  aria-label={`${participant.name || participant.userId || 'Participant'} ${
-                    participant.isLocalParticipant ? '(You)' : ''
-                  }`}
-                >
-                  <ParticipantView 
-                    participant={participant}
-                    trackType="videoTrack"
-                  />
-                  <div className="participant-info">
-                    <span className="participant-name">
-                      {participant.name || participant.userId || 'Participant'}
-                      {participant.isLocalParticipant && ' (You)'}
-                    </span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="no-participants" aria-live="polite">
-                <p>Waiting for participants to join...</p>
-              </div>
-            )}
-          </div>
+          <ParticipantGrid participants={participants} />
           
-          {/* FIXED: Changed class name to match CSS and show captions */}
-          {captionsEnabled && (
-            <div 
-              className="live-captions-container"
-              role="complementary"
-              aria-label="Live captions"
-              aria-live="polite"
-              aria-atomic="false"
-            >
-              <div 
-                ref={captionsRef}
-                className="captions-content"
-              >
-                {transcripts.length > 0 ? (
-                  transcripts.map((transcript, index) => (
-                    <div 
-                      key={`${transcript.sessionId}-${transcript.timestamp}`}
-                      className={`caption-item ${transcript.isFinal ? 'final' : 'interim'}`}
-                      aria-label={`${transcript.speaker} said: ${transcript.text}`}
-                    >
-                      <strong className="caption-speaker" aria-hidden="true">
-                        {transcript.speaker}:
-                      </strong>
-                      <span className="caption-text">
-                        {transcript.text}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="caption-placeholder">
-                    <span className="caption-text">
-                      {getStatusMessage()}
-                    </span>
-                  </div>
-                )}
-              </div>
-              
-              <div className="captions-status" aria-live="polite">
-                <span className="sr-only">
-                  Stream captions status: {transcriptionStatus}
-                </span>
-              </div>
-            </div>
-          )}
+          <TranscriptDisplay
+            transcripts={transcripts}
+            enabled={captionsEnabled}
+            status={transcriptionStatus}
+          />
           
           <AccessibleVideoControls
             call={call}
@@ -415,5 +273,3 @@ const AccessibleVideoContainer: React.FC<AccessibleVideoContainerProps> = ({
     </div>
   );
 };
-
-export default AccessibleVideoContainer;

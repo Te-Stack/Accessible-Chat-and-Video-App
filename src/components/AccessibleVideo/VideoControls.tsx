@@ -11,7 +11,7 @@ interface VideoControlsProps {
   captionsSupported: boolean;
 }
 
-const AccessibleVideoControls: React.FC<VideoControlsProps> = ({ 
+export const AccessibleVideoControls: React.FC<VideoControlsProps> = ({ 
   call, 
   onToggleFullscreen,
   onLeaveCall,
@@ -276,4 +276,3 @@ const AccessibleVideoControls: React.FC<VideoControlsProps> = ({
   );
 };
 
-export default AccessibleVideoControls;
