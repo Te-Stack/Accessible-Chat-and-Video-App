@@ -1,69 +1,70 @@
-# React + TypeScript + Vite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+# Accessible Chat + Video Room
 
-Currently, two official plugins are available:
+A demo React + TypeScript + Vite application showcasing an accessibility-first, real-time chat and video room built with Stream (Chat + Video) SDKs. The project focuses on semantic markup, ARIA live regions, keyboard navigation, focus management, screen reader announcements, captions, and accessible controls.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## What this project builds
+- An accessible real-time chat with semantic message lists, aria-live announcements, keyboard navigation, accessible inputs, and media attachments.
+- An inclusive video room with accessible custom controls (mute/unmute, leave, screen share), live captions, and keyboard/touch support.
+- Utility hooks to centralize accessibility logic: useAccessibilitySettings, useAnnouncements, useFocusManager, useCallManagement, useStreamConnection.
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Project structure (high level)
+```
+src/
+ ├─ components/
+ │  ├─ AccessibleChat/
+ │  ├─ AccessibleVideo/
+ │  ├─ Auth/
+ │  └─ Common/
+ ├─ hooks/
+ ├─ utils/
+ ├─ types/
+ └─ assets/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Prerequisites
+- Node.js 18+ recommended
+- A Stream account (for Chat & Video API keys) for a full demo
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Environment
+Create a `.env` file in the project root with at least:
 ```
+VITE_API_BASE_URL=http://localhost:4000
+VITE_STREAM_API_KEY=your_stream_api_key_here
+```
+The frontend uses `import.meta.env.VITE_API_BASE_URL` for the auth endpoint. The demo backend must expose a minimal `/auth` and `/users` POST endpoint.
+
+## Install & Run (development)
+```bash
+npm install
+npm run dev
+```
+
+## Build & Preview (production)
+```bash
+npm run build
+npm run preview
+```
+
+## Key files to inspect
+- `src/hooks/useStreamConnection.ts` — connects to backend and initializes Stream Chat + Video clients.
+- `src/hooks/useAnnouncements.ts` — React hook for queued screen reader announcements (uses `utils/screenReader.ts`).
+- `src/utils/screenReader.ts` — low-level aria-live DOM utility for non-React contexts.
+- `src/components/AccessibleChat/*` — chat UI, list, input, styles.
+- `src/components/AccessibleVideo/*` — video UI, controls, captions.
+- `src/App.tsx` — app shell and composition of chat + video.
+
+## Testing & Accessibility checks
+- Manual testing with VoiceOver (macOS) and NVDA (Windows)
+- Keyboard-only navigation testing
+- Automated checks: axe-core or Lighthouse
+
+## Recommendations / Notes
+- Use `useAnnouncements` from hooks in React components; keep `utils/screenReader` for non-React/global handlers.
+- Consolidate duplicate CSS (e.g., duplicated @keyframes) to avoid conflicts.
+- Keep accessibility concerns (focus management, live regions, reduced motion) in hooks to reuse across components.
+
+## Resources
+- Stream Docs: https://getstream.io/
+- WCAG Quick Reference: https://www.w3.org/WAI/standards-guidelines/wcag/
+- axe-core: https://www.deque.com/axe/
