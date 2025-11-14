@@ -1,4 +1,12 @@
 // hooks/useAnnouncements.ts
+/**
+ * @deprecated Use useScreenReader from utils/screenReader.ts instead
+ * 
+ * This hook is for managing visible announcement lists.
+ * For screen reader-only announcements, use useScreenReader.
+ * 
+ * Only use this if you need to display a visible notification/announcement list.
+ */
 import { useState, useCallback } from 'react';
 import type { Announcement } from '../types/accessibility';
 

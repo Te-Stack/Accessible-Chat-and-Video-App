@@ -1,7 +1,6 @@
 // App.tsx - Refactored with new structure
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
-  useAnnouncements, 
   useAccessibilitySettings,
   useStreamConnection,
   useCallManagement 
@@ -12,7 +11,7 @@ import { HubView } from './components/Hub/HubView';
 import { MeetingView } from './components/Meeting/MeetingView';
 import { ChatView } from './components/Chat/ChatView';
 import type { AppState, MeetingState, View, AccessibleMessage } from './types';
-import { cleanupMediaTracks } from './utils';
+import { cleanupMediaTracks, useScreenReader } from './utils';
 import { UserSelectView } from './components/UserSelect/UserSelectView';
 
 
@@ -33,7 +32,7 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<AccessibleMessage[]>([]);
 const [users, setUsers] = useState<Array<{ id: string; name?: string; image?: string }>>([]);
 
-  const { announce } = useAnnouncements();
+  const { announce } = useScreenReader();
   const { settings } = useAccessibilitySettings();
   
   const baseUrl = useMemo(() => 
@@ -269,10 +268,6 @@ useEffect(() => {
           />
         )}
 
-      
-      
-
-        {/* Chat view would go here - simplified for brevity */}
       </div>
     </ErrorBoundary>
   );

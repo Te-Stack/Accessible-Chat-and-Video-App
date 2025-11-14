@@ -1,6 +1,8 @@
 // Clean VideoControls.tsx with Web Speech API integration
 import React, { useState, useRef, useEffect } from 'react';
 import { useCallStateHooks, type Call } from '@stream-io/video-react-sdk';
+import { useScreenReader } from '../../utils';
+
 
 interface VideoControlsProps {
   call: Call;
@@ -38,7 +40,7 @@ export const AccessibleVideoControls: React.FC<VideoControlsProps> = ({
     camera: false,
     screen: false
   });
-  
+  const { announce } = useScreenReader();
   const controlsRef = useRef<HTMLDivElement>(null);
 
   // Enhanced keyboard navigation
@@ -80,11 +82,11 @@ export const AccessibleVideoControls: React.FC<VideoControlsProps> = ({
       setIsToggling(prev => ({ ...prev, mic: true }));
       await microphone.toggle();
       
-      announceToScreenReader(
+      announce(
         isMicMuted ? 'Microphone turned on' : 'Microphone turned off'
       );
     } catch (error) {
-      announceToScreenReader('Failed to toggle microphone');
+      announce ('Failed to toggle microphone');
       console.error('Failed to toggle microphone:', error);
     } finally {
       setIsToggling(prev => ({ ...prev, mic: false }));
@@ -97,12 +99,12 @@ export const AccessibleVideoControls: React.FC<VideoControlsProps> = ({
     try {
       setIsToggling(prev => ({ ...prev, camera: true }));
       await camera.toggle();
-      
-      announceToScreenReader(
+
+      announce(
         isCameraMuted ? 'Camera turned on' : 'Camera turned off'
       );
     } catch (error) {
-      announceToScreenReader('Failed to toggle camera');
+      announce('Failed to toggle camera');
       console.error('Failed to toggle camera:', error);
     } finally {
       setIsToggling(prev => ({ ...prev, camera: false }));
@@ -115,12 +117,12 @@ export const AccessibleVideoControls: React.FC<VideoControlsProps> = ({
     try {
       setIsToggling(prev => ({ ...prev, screen: true }));
       await screenShare.toggle();
-      
-      announceToScreenReader(
+
+      announce(
         isScreenShareMuted ? 'Screen sharing started' : 'Screen sharing stopped'
       );
     } catch (error) {
-      announceToScreenReader('Failed to toggle screen share');
+      announce('Failed to toggle screen share');
       console.error('Failed to toggle screen share:', error);
     } finally {
       setIsToggling(prev => ({ ...prev, screen: false }));
@@ -131,41 +133,16 @@ export const AccessibleVideoControls: React.FC<VideoControlsProps> = ({
     const confirmed = window.confirm('Are you sure you want to leave this call?');
     if (confirmed) {
       try {
-        announceToScreenReader('Leaving the call...');
+        announce('Leaving the call...');
         await onLeaveCall();
       } catch (error) {
         console.error('Error in leave call handler:', error);
-        announceToScreenReader('Error leaving call');
+        announce('Error leaving call');
       }
     }
   };
 
-  const announceToScreenReader = (message: string): void => {
-    const announcement = document.createElement('div');
-    announcement.setAttribute('aria-live', 'assertive');
-    announcement.setAttribute('aria-atomic', 'true');
-    announcement.className = 'sr-only';
-    announcement.textContent = message;
-    announcement.style.cssText = `
-      position: absolute !important;
-      width: 1px !important;
-      height: 1px !important;
-      padding: 0 !important;
-      margin: -1px !important;
-      overflow: hidden !important;
-      clip: rect(0, 0, 0, 0) !important;
-      white-space: nowrap !important;
-      border: 0 !important;
-    `;
-    
-    document.body.appendChild(announcement);
-    
-    setTimeout(() => {
-      if (document.body.contains(announcement)) {
-        document.body.removeChild(announcement);
-      }
-    }, 1000);
-  };
+  
 
   return (
     <div 
